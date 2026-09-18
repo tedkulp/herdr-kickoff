@@ -42,6 +42,10 @@ release:
 link: release
     herdr plugin link .
 
+# Unlink the release plugin into Herdr for development.
+unlink:
+    herdr plugin unlink kickoff
+
 # Open the launcher popup.
 open:
     herdr plugin action invoke kickoff.open
