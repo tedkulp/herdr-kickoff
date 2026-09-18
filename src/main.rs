@@ -70,8 +70,9 @@ fn is_available(harness: &config::Harness) -> bool {
     harness::is_available(harness, std::env::var_os("PATH").as_deref())
 }
 
-fn zoxide_dirs(program: &str) -> Result<Vec<String>> {
-    let output = match Command::new(program).args(["query", "--list"]).output() {
+/// Runs `command query --list`; `command` is `zoxide` outside tests.
+fn zoxide_dirs(mut command: Command) -> Result<Vec<String>> {
+    let output = match command.args(["query", "--list"]).output() {
         Ok(output) => output,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             bail!("zoxide not found on PATH")
@@ -102,7 +103,7 @@ fn run_launcher() -> Result<()> {
         startup_errors.push(format!("{err:#}; using built-in harnesses"));
         Config::from_toml("").expect("empty config parses")
     });
-    let zoxide = zoxide_dirs("zoxide").unwrap_or_else(|err| {
+    let zoxide = zoxide_dirs(Command::new("zoxide")).unwrap_or_else(|err| {
         startup_errors.push(format!("{err:#}; type a /path or ~/path instead"));
         Vec::new()
     });
@@ -179,41 +180,43 @@ fn event_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
 
-    fn script(dir: &Path, body: &str) -> String {
-        let path = dir.join("fake-zoxide");
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        path.to_string_lossy().into_owned()
+    /// A fake zoxide as an `sh -c` script. Running a freshly written script
+    /// file instead races with other tests forking on Linux ("Text file busy").
+    fn fake_zoxide(body: &str) -> Command {
+        let mut command = Command::new("sh");
+        command.args(["-c", body, "fake-zoxide"]);
+        command
+    }
+
+    fn error_of(command: Command) -> String {
+        format!("{:#}", zoxide_dirs(command).unwrap_err())
     }
 
     #[test]
     fn missing_zoxide_is_reported_plainly() {
-        let err = zoxide_dirs("definitely-not-zoxide-xyz").unwrap_err();
-        assert_eq!(format!("{err:#}"), "zoxide not found on PATH");
+        let message = error_of(Command::new("definitely-not-zoxide-xyz"));
+        assert_eq!(message, "zoxide not found on PATH");
     }
 
     #[test]
     fn failing_zoxide_reports_its_stderr() {
-        let dir = tempfile::tempdir().unwrap();
-        let fake = script(dir.path(), "echo 'bad database' >&2; exit 1");
-        let err = zoxide_dirs(&fake).unwrap_err();
-        assert_eq!(format!("{err:#}"), "zoxide failed: bad database");
+        let message = error_of(fake_zoxide("echo 'bad database' >&2; exit 1"));
+        assert_eq!(message, "zoxide failed: bad database");
     }
 
     #[test]
     fn failing_zoxide_without_stderr_reports_status() {
-        let dir = tempfile::tempdir().unwrap();
-        let fake = script(dir.path(), "exit 3");
-        let err = zoxide_dirs(&fake).unwrap_err();
-        assert!(format!("{err:#}").starts_with("zoxide failed (exit status: 3)"));
+        let message = error_of(fake_zoxide("exit 3"));
+        assert!(
+            message.starts_with("zoxide failed (exit status: 3)"),
+            "{message}"
+        );
     }
 
     #[test]
     fn lists_directories() {
-        let dir = tempfile::tempdir().unwrap();
-        let fake = script(dir.path(), "printf '/a\\n\\n/b\\n'");
-        assert_eq!(zoxide_dirs(&fake).unwrap(), ["/a", "/b"]);
+        let dirs = zoxide_dirs(fake_zoxide("printf '/a\\n\\n/b\\n'")).unwrap();
+        assert_eq!(dirs, ["/a", "/b"]);
     }
 }
