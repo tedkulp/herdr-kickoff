@@ -1,6 +1,6 @@
 id = "kickoff"
 name = "Kickoff"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.9.1"
 description = "Popup form to open a directory as a new workspace with a chosen coding-agent harness, in place or in a git worktree. Config: $(herdr plugin config-dir kickoff)/config.toml"
 platforms = ["linux", "macos"]
