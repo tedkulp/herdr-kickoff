@@ -1,0 +1,23 @@
+id = "workspace-launcher"
+name = "Workspace Launcher"
+version = "0.1.0"
+min_herdr_version = "0.9.1"
+description = "Popup form to open a directory as a new workspace with a chosen coding-agent harness, in place or in a git worktree. Config: $(herdr plugin config-dir workspace-launcher)/config.toml"
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["cargo", "build", "--release", "--locked"]
+
+[[actions]]
+id = "open"
+title = "New workspace (launcher)"
+contexts = ["global", "workspace", "tab", "pane"]
+command = ["target/release/workspace-launcher", "action"]
+
+[[panes]]
+id = "launcher"
+title = "New workspace"
+placement = "popup"
+width = "70%"
+height = "60%"
+command = ["target/release/workspace-launcher", "launcher"]
