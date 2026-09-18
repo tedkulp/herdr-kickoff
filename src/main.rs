@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
@@ -70,11 +70,21 @@ fn is_available(harness: &config::Harness) -> bool {
     harness::is_available(harness, std::env::var_os("PATH").as_deref())
 }
 
-fn zoxide_dirs() -> Result<Vec<String>> {
-    let output = Command::new("zoxide")
-        .args(["query", "--list"])
-        .output()
-        .context("running zoxide")?;
+fn zoxide_dirs(program: &str) -> Result<Vec<String>> {
+    let output = match Command::new(program).args(["query", "--list"]).output() {
+        Ok(output) => output,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            bail!("zoxide not found on PATH")
+        }
+        Err(err) => return Err(err).context("running zoxide"),
+    };
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        match stderr.lines().map(str::trim).find(|l| !l.is_empty()) {
+            Some(line) => bail!("zoxide failed: {line}"),
+            None => bail!("zoxide failed ({})", output.status),
+        }
+    }
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter(|l| !l.is_empty())
@@ -92,8 +102,8 @@ fn run_launcher() -> Result<()> {
         startup_errors.push(format!("{err:#}; using built-in harnesses"));
         Config::from_toml("").expect("empty config parses")
     });
-    let zoxide = zoxide_dirs().unwrap_or_else(|err| {
-        startup_errors.push(format!("{err:#}; type a /path instead"));
+    let zoxide = zoxide_dirs("zoxide").unwrap_or_else(|err| {
+        startup_errors.push(format!("{err:#}; type a /path or ~/path instead"));
         Vec::new()
     });
     let last_harness = last_harness_path
@@ -163,5 +173,47 @@ fn event_loop(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn script(dir: &Path, body: &str) -> String {
+        let path = dir.join("fake-zoxide");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn missing_zoxide_is_reported_plainly() {
+        let err = zoxide_dirs("definitely-not-zoxide-xyz").unwrap_err();
+        assert_eq!(format!("{err:#}"), "zoxide not found on PATH");
+    }
+
+    #[test]
+    fn failing_zoxide_reports_its_stderr() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = script(dir.path(), "echo 'bad database' >&2; exit 1");
+        let err = zoxide_dirs(&fake).unwrap_err();
+        assert_eq!(format!("{err:#}"), "zoxide failed: bad database");
+    }
+
+    #[test]
+    fn failing_zoxide_without_stderr_reports_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = script(dir.path(), "exit 3");
+        let err = zoxide_dirs(&fake).unwrap_err();
+        assert!(format!("{err:#}").starts_with("zoxide failed (exit status: 3)"));
+    }
+
+    #[test]
+    fn lists_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = script(dir.path(), "printf '/a\\n\\n/b\\n'");
+        assert_eq!(zoxide_dirs(&fake).unwrap(), ["/a", "/b"]);
     }
 }
