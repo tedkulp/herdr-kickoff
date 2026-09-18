@@ -183,6 +183,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "herdr-kickoff"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -785,18 +797,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "workspace-launcher"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ratatui",
- "serde",
- "serde_json",
- "tempfile",
- "toml",
 ]
 
 [[package]]

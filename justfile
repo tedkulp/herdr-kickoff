@@ -44,7 +44,7 @@ link: release
 
 # Open the launcher popup.
 open:
-    herdr plugin action invoke workspace-launcher.open
+    herdr plugin action invoke kickoff.open
 
 # Open the launcher popup with zoxide removed from PATH.
 open-no-zoxide:
@@ -57,9 +57,9 @@ open-no-zoxide:
         [[ -x "$dir/zoxide" ]] && { echo "dropping $dir" >&2; continue; }
         path="${path:+$path:}$dir"
     done
-    herdr plugin pane open --plugin workspace-launcher --entrypoint launcher \
+    herdr plugin pane open --plugin kickoff --entrypoint launcher \
         --env "PATH=$path" --focus >/dev/null
 
 # List this plugin's command logs.
 logs:
-    herdr plugin log list --plugin workspace-launcher
+    herdr plugin log list --plugin kickoff

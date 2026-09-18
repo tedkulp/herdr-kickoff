@@ -1,4 +1,4 @@
-# Workspace Launcher
+# Kickoff
 
 A herdr plugin that opens a popup form for starting a new workspace:
 
@@ -37,13 +37,13 @@ herdr plugin link .
 [[keys.command]]
 key = "prefix+shift+n"
 type = "plugin_action"
-command = "workspace-launcher.open"
-description = "new workspace (launcher)"
+command = "kickoff.open"
+description = "new workspace (kickoff)"
 ```
 
 ## Config
 
-`$(herdr plugin config-dir workspace-launcher)/config.toml`:
+`$(herdr plugin config-dir kickoff)/config.toml`:
 
 ```toml
 default_harness = "Claude"      # used when there's no remembered harness

@@ -1,4 +1,4 @@
-# Workspace Launcher
+# Kickoff
 
 A herdr plugin that opens a popup form to start a new herdr workspace in a chosen directory with a chosen coding agent.
 

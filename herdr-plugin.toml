@@ -1,8 +1,8 @@
-id = "workspace-launcher"
-name = "Workspace Launcher"
+id = "kickoff"
+name = "Kickoff"
 version = "0.1.0"
 min_herdr_version = "0.9.1"
-description = "Popup form to open a directory as a new workspace with a chosen coding-agent harness, in place or in a git worktree. Config: $(herdr plugin config-dir workspace-launcher)/config.toml"
+description = "Popup form to open a directory as a new workspace with a chosen coding-agent harness, in place or in a git worktree. Config: $(herdr plugin config-dir kickoff)/config.toml"
 platforms = ["linux", "macos"]
 
 [[build]]
@@ -10,9 +10,9 @@ command = ["cargo", "build", "--release", "--locked"]
 
 [[actions]]
 id = "open"
-title = "New workspace (launcher)"
+title = "New workspace (Kickoff)"
 contexts = ["global", "workspace", "tab", "pane"]
-command = ["target/release/workspace-launcher", "action"]
+command = ["target/release/herdr-kickoff", "action"]
 
 [[panes]]
 id = "launcher"
@@ -20,4 +20,4 @@ title = "New workspace"
 placement = "popup"
 width = "70%"
 height = "60%"
-command = ["target/release/workspace-launcher", "launcher"]
+command = ["target/release/herdr-kickoff", "launcher"]

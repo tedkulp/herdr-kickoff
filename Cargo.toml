@@ -1,5 +1,5 @@
 [package]
-name = "workspace-launcher"
+name = "herdr-kickoff"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"

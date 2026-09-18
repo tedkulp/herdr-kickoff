@@ -19,7 +19,7 @@ use crate::config::Config;
 use crate::git::RepoInfo;
 use crate::herdr::Herdr;
 
-const PLUGIN_ID: &str = "workspace-launcher";
+const PLUGIN_ID: &str = "kickoff";
 const LAST_HARNESS_FILE: &str = "last_harness";
 const AVAILABILITY_REFRESH: Duration = Duration::from_secs(2);
 
@@ -28,14 +28,14 @@ fn main() -> ExitCode {
         Some("action") => open_popup(),
         Some("launcher") => run_launcher(),
         _ => {
-            eprintln!("usage: workspace-launcher <action|launcher>");
+            eprintln!("usage: herdr-kickoff <action|launcher>");
             return ExitCode::from(2);
         }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("workspace-launcher: {err:#}");
+            eprintln!("herdr-kickoff: {err:#}");
             ExitCode::FAILURE
         }
     }
