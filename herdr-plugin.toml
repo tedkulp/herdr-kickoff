@@ -6,13 +6,13 @@ description = "Popup form to open a directory as a new workspace with a chosen c
 platforms = ["linux", "macos"]
 
 [[build]]
-command = ["cargo", "build", "--release", "--locked"]
+command = ["bash", "herdr/install.sh"]
 
 [[actions]]
 id = "open"
 title = "New workspace (Kickoff)"
 contexts = ["global", "workspace", "tab", "pane"]
-command = ["target/release/herdr-kickoff", "action"]
+command = ["bin/herdr-kickoff", "action"]
 
 [[panes]]
 id = "launcher"
@@ -20,4 +20,4 @@ title = "New workspace"
 placement = "popup"
 width = "70%"
 height = "60%"
-command = ["target/release/herdr-kickoff", "launcher"]
+command = ["bin/herdr-kickoff", "launcher"]

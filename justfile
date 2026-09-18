@@ -34,9 +34,14 @@ verify: fmt-check lint test
 build:
     cargo build --locked
 
-# Build the release plugin binary.
+# Build the release binary into bin/, where the plugin manifest runs it.
 release:
     cargo build --release --locked
+    mkdir -p bin && cp target/release/herdr-kickoff bin/herdr-kickoff
+
+# Run the install hook `herdr plugin install` uses (downloads the prebuilt binary).
+install-hook:
+    bash herdr/install.sh
 
 # Link the release plugin into Herdr for development.
 link: release
