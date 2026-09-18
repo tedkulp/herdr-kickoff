@@ -18,5 +18,22 @@ jobs:
           components: rustfmt, clippy
       - uses: extractions/setup-just@v4
       - run: just verify
+      - run: just test-scripts
       # Same build herdr runs on `plugin install`.
       - run: just release
+
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # feat, fix, perf and breaking commits need an entry under [Unreleased].
+      - name: CHANGELOG.md updated for user-facing commits
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # A new branch has no previous commit to compare against.
+          if [ "$BASE" = 0000000000000000000000000000000000000000 ]; then exit 0; fi
+          python3 scripts/changelog.py check "$BASE" "$HEAD"

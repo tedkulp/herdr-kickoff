@@ -62,8 +62,9 @@ command = "claude --continue"
 
 Releases are automated with [release-please](https://github.com/googleapis/release-please):
 
-1. Write commit messages (or squash-merge PR titles) as [conventional commits](https://www.conventionalcommits.org/). Use `feat:` for new behaviour and `fix:` for bug fixes; these appear in the changelog. `docs:`, `chore:`, `ci:`, `refactor:` and `test:` are allowed but left out of it. `feat!:` marks a breaking change.
-2. On each push to `main`, release-please opens or updates a release PR. That PR bumps the version in `Cargo.toml`, `Cargo.lock` and `herdr-plugin.toml` and adds the new commits to `CHANGELOG.md`.
-3. Merging the release PR tags `vX.Y.Z` and publishes the GitHub release. The `release` workflow then builds the binaries and attaches them to it, with `.sha256` checksums. To rebuild them for an existing tag, run `gh workflow run release.yml -f tag=vX.Y.Z`.
+1. Write commit messages (or squash-merge PR titles) as [conventional commits](https://www.conventionalcommits.org/). Use `feat:` for new behaviour and `fix:` for bug fixes; these set the next version. `docs:`, `chore:`, `ci:`, `refactor:` and `test:` are allowed and don't. `feat!:` marks a breaking change.
+2. Record every user-facing change under `## [Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md), which follows [Keep a Changelog](https://keepachangelog.com). CI fails `feat`, `fix`, `perf` and breaking commits that don't touch it; `just changelog-check` runs the same check locally.
+3. On each push to `main`, release-please opens or updates a release PR. That PR bumps the version in `Cargo.toml`, `Cargo.lock` and `herdr-plugin.toml`, and a follow-up job turns `[Unreleased]` into the dated version section (`scripts/changelog.py release`).
+4. Merging the release PR tags `vX.Y.Z` and publishes the GitHub release. The `release` workflow then builds the binaries and attaches them to it, with `.sha256` checksums. To rebuild them for an existing tag, run `gh workflow run release.yml -f tag=vX.Y.Z`.
 
 The repo setting *Settings → Actions → General → Allow GitHub Actions to create and approve pull requests* must be on, or release-please can't open its PR.

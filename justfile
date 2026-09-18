@@ -27,6 +27,14 @@ test:
 test-one name:
     cargo test {{name}}
 
+# Test the CHANGELOG.md helper script.
+test-scripts:
+    python3 -m unittest discover -s scripts
+
+# Check that user-facing commits since `base` (default: origin/main) updated CHANGELOG.md.
+changelog-check base="origin/main":
+    python3 scripts/changelog.py check {{base}} HEAD
+
 # Run formatting checks, lints, and the full test suite.
 verify: fmt-check lint test
 
