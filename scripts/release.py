@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prepare a release commit; the release workflow commits, tags and publishes it.
 
+  release.py next                         print the version `prepare` would pick
   release.py prepare [VERSION] NOTES_FILE
 
 Without VERSION, the next version comes from the conventional commits since the
@@ -55,11 +56,15 @@ def release_notes(text: str, version: str) -> str:
     return text[heading.end() : end.start() if end else len(text)].strip() + "\n"
 
 
-def prepare(version: str | None, notes_file: Path) -> str:
+def next_release() -> str:
+    """The next version, from the commits since the tag of the current one."""
     current = TOP_LEVEL_VERSION.search(VERSIONED_FILES[0].read_text())["version"]
-    if not version:
-        log = git("log", "--format=%B%x00", f"v{current}..HEAD")
-        version = next_version(current, [m.strip() for m in log.split("\0") if m.strip()])
+    log = git("log", "--format=%B%x00", f"v{current}..HEAD")
+    return next_version(current, [m.strip() for m in log.split("\0") if m.strip()])
+
+
+def prepare(version: str | None, notes_file: Path) -> str:
+    version = version or next_release()
     if git("tag", "--list", f"v{version}").strip():
         raise ChangelogError(f"tag v{version} already exists")
 
@@ -73,15 +78,17 @@ def prepare(version: str | None, notes_file: Path) -> str:
 
 def main(argv: list[str]) -> int:
     match argv:
+        case ["next"]:
+            run = next_release
         case ["prepare", notes_file]:
-            version = None
+            run = lambda: prepare(None, Path(notes_file))  # noqa: E731
         case ["prepare", version, notes_file]:
-            pass
+            run = lambda: prepare(version, Path(notes_file))  # noqa: E731
         case _:
             print(__doc__, file=sys.stderr)
             return 2
     try:
-        print(prepare(version, Path(notes_file)))
+        print(run())
     except ChangelogError as err:
         print(f"release: {err}", file=sys.stderr)
         return 1
