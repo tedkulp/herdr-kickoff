@@ -4,11 +4,10 @@ A herdr plugin that opens a popup form for starting a new workspace:
 
 1. **Directory**: pick from `zoxide query --list`, filtered like `zoxide query -i` (every word must appear in the path, zoxide ranking kept), or type a `/path` or `~/path`
 2. **Harness**: Opencode, Codex, Claude, pi, omp or Shell. Harnesses that aren't on PATH are greyed out, and PATH is re-checked live.
-3. **Branch**: *In place* shows the current branch. *Worktree* creates a worktree for the branch you type:
-   - a new branch starts from the default branch
-   - an existing branch gets a worktree
-   - a branch that already has a worktree gets that worktree reopened
-4. **Title**: the workspace label. It defaults to the directory name (`name:branch` for worktrees) until you edit it.
+3. **Branch**: pick from the local branches (current first, then most recently committed), filtered the same way as directories. Branches checked out in a worktree are tagged `⎇ worktree`. Typing a name that doesn't exist creates it from the default branch.
+   - *In place* opens the directory itself. Leave the current branch to open it as is; pick another branch and the directory is switched to it (`git switch`) before launching. Uncommitted changes come along if git allows it; if the switch fails, git's error is shown and nothing launches. A branch checked out in another worktree needs *Worktree* mode.
+   - *Worktree* creates a worktree for the branch: an existing branch gets a worktree, and a branch that already has a worktree gets that worktree reopened.
+4. **Title**: the workspace label. It defaults to the directory name (`name:branch` for worktrees, or when *In place* switches branch) until you edit it.
 
 Submitting creates the workspace, focuses it, starts the harness in its first pane and closes the popup.
 The last harness you used is remembered.
@@ -18,7 +17,8 @@ The last harness you used is remembered.
 | Key | Action |
 | --- | --- |
 | Tab / Shift-Tab, ↑↓ | move between fields |
-| Enter | open the directory picker / pick / next field; on Title it launches |
+| Enter | open the directory or branch picker / pick / next field; on Title it launches |
+| typing (Directory, Branch) | open the picker with what you typed as the filter |
 | ←→ (Harness) | choose harness |
 | ←→ or `w` (Branch) | switch between In place and Worktree |
 | Ctrl-S | launch |

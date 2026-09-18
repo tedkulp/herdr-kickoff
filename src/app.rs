@@ -49,10 +49,20 @@ pub struct HarnessChoice {
     pub available: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PickerKind {
+    #[default]
+    Directory,
+    Branch,
+}
+
 #[derive(Debug, Default)]
 pub struct Picker {
+    pub kind: PickerKind,
     pub query: String,
-    /// Entries shown, in order: an existing typed path first, then zoxide matches.
+    /// Entries shown, in order. Directories: an existing typed path first, then
+    /// zoxide matches. Branches: matching local branches, then the typed name
+    /// if it would be a new branch.
     pub entries: Vec<String>,
     pub selected: usize,
 }
@@ -68,7 +78,8 @@ pub struct Request {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Launch {
-    InPlace,
+    /// Open the Target Directory itself, switching its branch first if `switch` is set.
+    InPlace { switch: Option<BranchSwitch> },
     /// Create a worktree; `base` is set only when the branch is new.
     CreateWorktree {
         repo_root: PathBuf,
@@ -76,10 +87,17 @@ pub enum Launch {
         base: Option<String>,
     },
     /// Reopen the worktree that already has the branch checked out.
-    OpenWorktree {
-        repo_root: PathBuf,
-        branch: String,
-    },
+    OpenWorktree { repo_root: PathBuf, branch: String },
+}
+
+/// Check out another branch in the Target Directory before launching.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchSwitch {
+    pub repo_root: PathBuf,
+    pub branch: String,
+    /// The branch is new: create it from `base` (HEAD when `None`).
+    pub create: bool,
+    pub base: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -136,7 +154,7 @@ impl<P: Probe> App<P> {
                     .position(|h| h.available && h.harness.name.eq_ignore_ascii_case(name))
             })
             .or_else(|| app.harnesses.iter().position(|h| h.available));
-        app.open_picker(String::new());
+        app.open_picker(PickerKind::Directory, String::new());
         app
     }
 
@@ -154,11 +172,18 @@ impl<P: Probe> App<P> {
         }
     }
 
-    pub fn branch_status(&self) -> Option<BranchStatus> {
-        match (self.mode, &self.repo) {
-            (LaunchMode::Worktree, Some(repo)) => Some(repo.branch_status(&self.branch)),
-            _ => None,
-        }
+    /// In Place with a branch other than the one already checked out.
+    pub fn switches_branch(&self) -> bool {
+        self.mode == LaunchMode::InPlace
+            && self.repo.is_some()
+            && self.branch != self.current_branch_label()
+    }
+
+    /// An In Place `git switch` failed: nothing was launched, so show git's
+    /// error on the Branch field for the user to fix or cancel.
+    pub fn branch_switch_failed(&mut self, message: String) {
+        self.error = Some(message);
+        self.field = Field::Branch;
     }
 
     /// Re-check which harnesses are installed, keeping the selection on an available one.
@@ -203,7 +228,10 @@ impl<P: Probe> App<P> {
             KeyCode::Esc => self.picker = None,
             KeyCode::Enter => {
                 if let Some(entry) = picker.entries.get(picker.selected).cloned() {
-                    self.select_directory(PathBuf::from(entry));
+                    match picker.kind {
+                        PickerKind::Directory => self.select_directory(PathBuf::from(entry)),
+                        PickerKind::Branch => self.select_branch(entry),
+                    }
                 }
             }
             KeyCode::Up | KeyCode::BackTab => picker.selected = picker.selected.saturating_sub(1),
@@ -233,9 +261,9 @@ impl<P: Probe> App<P> {
 
     fn handle_directory_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Enter => self.open_picker(String::new()),
+            KeyCode::Enter => self.open_picker(PickerKind::Directory, String::new()),
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.open_picker(c.to_string())
+                self.open_picker(PickerKind::Directory, c.to_string())
             }
             _ => {}
         }
@@ -261,17 +289,8 @@ impl<P: Probe> App<P> {
             (_, KeyCode::Left | KeyCode::Right) | (LaunchMode::InPlace, KeyCode::Char('w')) => {
                 self.toggle_mode()
             }
-            (_, KeyCode::Enter) => self.field = Field::Title,
-            (LaunchMode::Worktree, KeyCode::Char('u')) if ctrl => self.set_branch(String::new()),
-            (LaunchMode::Worktree, KeyCode::Backspace) => {
-                let mut branch = self.branch.clone();
-                branch.pop();
-                self.set_branch(branch);
-            }
-            (LaunchMode::Worktree, KeyCode::Char(c)) if !ctrl => {
-                let branch = format!("{}{c}", self.branch);
-                self.set_branch(branch);
-            }
+            (_, KeyCode::Enter) => self.open_picker(PickerKind::Branch, String::new()),
+            (_, KeyCode::Char(c)) if !ctrl => self.open_picker(PickerKind::Branch, c.to_string()),
             _ => {}
         }
     }
@@ -296,8 +315,9 @@ impl<P: Probe> App<P> {
         Outcome::Continue
     }
 
-    fn open_picker(&mut self, query: String) {
+    fn open_picker(&mut self, kind: PickerKind, query: String) {
         self.picker = Some(Picker {
+            kind,
             query,
             ..Picker::default()
         });
@@ -308,16 +328,35 @@ impl<P: Probe> App<P> {
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
-        let mut entries = Vec::new();
-        if let Some(path) = expand_typed_path(&picker.query, self.probe.home())
-            && self.probe.is_dir(&path)
-        {
-            entries.push(path.to_string_lossy().into_owned());
-        }
-        for i in filter::filter(&picker.query, &self.zoxide) {
-            if !entries.contains(&self.zoxide[i]) {
-                entries.push(self.zoxide[i].clone());
+        let (typed, candidates, typed_first) = match picker.kind {
+            PickerKind::Directory => (
+                expand_typed_path(&picker.query, self.probe.home())
+                    .filter(|path| self.probe.is_dir(path))
+                    .map(|path| path.to_string_lossy().into_owned()),
+                &self.zoxide,
+                true,
+            ),
+            PickerKind::Branch => {
+                let Some(repo) = &self.repo else {
+                    return;
+                };
+                let query = picker.query.trim();
+                (
+                    (repo.branch_status(query) == BranchStatus::New).then(|| query.to_string()),
+                    &repo.branches,
+                    false,
+                )
             }
+        };
+        let mut entries: Vec<String> = Vec::new();
+        for i in filter::filter(&picker.query, candidates) {
+            if typed.as_ref() != Some(&candidates[i]) {
+                entries.push(candidates[i].clone());
+            }
+        }
+        if let Some(typed) = typed {
+            let at = if typed_first { 0 } else { entries.len() };
+            entries.insert(at, typed);
         }
         picker.entries = entries;
         picker.selected = 0;
@@ -332,6 +371,13 @@ impl<P: Probe> App<P> {
         self.branch = self.current_branch_label();
         self.field = Field::Harness;
         self.follow_title();
+    }
+
+    fn select_branch(&mut self, branch: String) {
+        self.picker = None;
+        self.error = None;
+        self.field = Field::Title;
+        self.set_branch(branch);
     }
 
     fn cycle_harness(&mut self, delta: isize) {
@@ -368,12 +414,12 @@ impl<P: Probe> App<P> {
             Some(repo) => repo
                 .current_branch
                 .clone()
-                .unwrap_or_else(|| "(detached HEAD)".to_string()),
+                .unwrap_or_else(|| "(detached)".to_string()),
             None => String::new(),
         }
     }
 
-    /// The Title follows the Target Directory (and Worktree branch) until edited.
+    /// The Title follows the Target Directory (and a chosen branch) until edited.
     fn follow_title(&mut self) {
         if !self.title_edited {
             self.title = self.default_title();
@@ -388,9 +434,14 @@ impl<P: Probe> App<P> {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| dir.to_string_lossy().into_owned());
-        match self.mode {
-            LaunchMode::Worktree if !self.branch.is_empty() => format!("{base}:{}", self.branch),
-            _ => base,
+        let show_branch = match self.mode {
+            LaunchMode::Worktree => !self.branch.is_empty(),
+            LaunchMode::InPlace => self.switches_branch(),
+        };
+        if show_branch {
+            format!("{base}:{}", self.branch)
+        } else {
+            base
         }
     }
 
@@ -444,7 +495,40 @@ impl<P: Probe> App<P> {
                     BranchStatus::CheckedOut(_) => Launch::OpenWorktree { repo_root, branch },
                 }
             }
-            _ => Launch::InPlace,
+            (LaunchMode::InPlace, Some(repo)) if self.switches_branch() => {
+                let branch = self.branch.clone();
+                let (create, base) = match repo.branch_status(&branch) {
+                    BranchStatus::Empty => {
+                        return Err(("Pick a branch".into(), Field::Branch));
+                    }
+                    BranchStatus::Invalid => {
+                        return Err((
+                            format!("'{branch}' is not a valid branch name"),
+                            Field::Branch,
+                        ));
+                    }
+                    BranchStatus::CheckedOut(path) => {
+                        return Err((
+                            format!(
+                                "'{branch}' is checked out at {}, use Worktree mode",
+                                path.display()
+                            ),
+                            Field::Branch,
+                        ));
+                    }
+                    BranchStatus::New => (true, repo.base.clone()),
+                    BranchStatus::Existing => (false, None),
+                };
+                Launch::InPlace {
+                    switch: Some(BranchSwitch {
+                        repo_root: repo.root.clone(),
+                        branch,
+                        create,
+                        base,
+                    }),
+                }
+            }
+            _ => Launch::InPlace { switch: None },
         };
         let title = match self.title.trim() {
             "" => self.default_title(),
@@ -482,17 +566,22 @@ fn expand_typed_path(query: &str, home: Option<PathBuf>) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
 
     struct FakeProbe;
 
     impl Probe for FakeProbe {
         fn inspect(&self, dir: &Path) -> Option<RepoInfo> {
-            (dir.ends_with("repo")).then(|| RepoInfo {
+            let current_branch = match dir.file_name()?.to_str()? {
+                "repo" => Some("main".into()),
+                "detached" => None,
+                _ => return None,
+            };
+            Some(RepoInfo {
                 root: dir.to_path_buf(),
-                current_branch: Some("main".into()),
+                current_branch,
                 base: Some("origin/main".into()),
-                local_branches: HashSet::from(["main".into(), "feat/old".into(), "feat/wt".into()]),
+                branches: vec!["main".into(), "feat/wt".into(), "feat/old".into()],
                 worktrees: HashMap::from([
                     ("main".into(), dir.to_path_buf()),
                     ("feat/wt".into(), PathBuf::from("/wt/feat-wt")),
@@ -520,7 +609,11 @@ mod tests {
     fn app() -> App<FakeProbe> {
         App::new(
             FakeProbe,
-            vec!["/home/me/src/repo".into(), "/home/me/notes".into()],
+            vec![
+                "/home/me/src/repo".into(),
+                "/home/me/notes".into(),
+                "/home/me/src/detached".into(),
+            ],
             vec![
                 harness("Opencode", true),
                 harness("pi", false),
@@ -622,26 +715,107 @@ mod tests {
         assert!(app.harnesses[1].available);
     }
 
-    #[test]
-    fn in_place_branch_is_read_only() {
-        let mut app = app();
-        pick(&mut app, "repo");
-        app.field = Field::Branch;
-        press(&mut app, KeyCode::Char('x'));
-        assert_eq!(app.branch, "main");
+    fn branch_status(app: &App<FakeProbe>) -> BranchStatus {
+        app.repo.as_ref().unwrap().branch_status(&app.branch)
+    }
+
+    fn branch_picker(app: &App<FakeProbe>) -> &Picker {
+        let picker = app.picker.as_ref().expect("picker is open");
+        assert_eq!(picker.kind, PickerKind::Branch);
+        picker
     }
 
     #[test]
-    fn worktree_mode_edits_branch_and_title_follows() {
+    fn enter_on_branch_opens_picker_current_first() {
+        let mut app = app();
+        pick(&mut app, "repo");
+        app.field = Field::Branch;
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(branch_picker(&app).entries, ["main", "feat/wt", "feat/old"]);
+    }
+
+    #[test]
+    fn typing_on_branch_opens_filtered_picker() {
+        let mut app = app();
+        pick(&mut app, "repo");
+        app.field = Field::Branch;
+        type_text(&mut app, "feat");
+        let picker = branch_picker(&app);
+        assert_eq!(picker.query, "feat");
+        assert_eq!(picker.entries, ["feat/wt", "feat/old", "feat"]);
+        type_text(&mut app, " old");
+        assert_eq!(branch_picker(&app).entries, ["feat/old"]);
+    }
+
+    #[test]
+    fn picking_a_branch_in_place_updates_branch_and_title() {
+        let mut app = app();
+        pick(&mut app, "repo");
+        app.field = Field::Branch;
+        pick(&mut app, "old");
+        assert!(app.picker.is_none());
+        assert_eq!(app.mode, LaunchMode::InPlace);
+        assert_eq!(app.branch, "feat/old");
+        assert_eq!(app.title, "repo:feat/old");
+        assert_eq!(app.field, Field::Title);
+    }
+
+    #[test]
+    fn typed_new_branch_is_offered_last_unless_invalid() {
+        let mut app = app();
+        pick(&mut app, "repo");
+        app.field = Field::Branch;
+        type_text(&mut app, "feat/");
+        // "feat/" is not a valid branch name, so it isn't offered.
+        assert_eq!(branch_picker(&app).entries, ["feat/wt", "feat/old"]);
+        type_text(&mut app, "w");
+        // "feat/w" is new but matches feat/wt, which is picked by default.
+        assert_eq!(branch_picker(&app).entries, ["feat/wt", "feat/w"]);
+        type_text(&mut app, "x");
+        assert_eq!(branch_picker(&app).entries, ["feat/wx"]);
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.branch, "feat/wx");
+        assert_eq!(branch_status(&app), BranchStatus::New);
+    }
+
+    #[test]
+    fn escape_closes_branch_picker_and_keeps_branch() {
+        let mut app = app();
+        pick(&mut app, "repo");
+        app.field = Field::Branch;
+        type_text(&mut app, "old");
+        assert_eq!(press(&mut app, KeyCode::Esc), Outcome::Continue);
+        assert!(app.picker.is_none());
+        assert_eq!(app.branch, "main");
+        assert_eq!(app.title, "repo");
+    }
+
+    #[test]
+    fn mode_toggles_still_work_on_branch_field() {
+        let mut app = app();
+        pick(&mut app, "repo");
+        app.field = Field::Branch;
+        press(&mut app, KeyCode::Right);
+        assert_eq!(app.mode, LaunchMode::Worktree);
+        press(&mut app, KeyCode::Left);
+        assert_eq!(app.mode, LaunchMode::InPlace);
+        press(&mut app, KeyCode::Char('w'));
+        assert_eq!(app.mode, LaunchMode::Worktree);
+        assert!(app.picker.is_none());
+    }
+
+    #[test]
+    fn worktree_mode_picks_branch_and_title_follows() {
         let mut app = app();
         pick(&mut app, "repo");
         app.field = Field::Branch;
         press(&mut app, KeyCode::Char('w'));
         assert_eq!(app.mode, LaunchMode::Worktree);
         assert_eq!(app.branch, "");
-        type_text(&mut app, "feat/new");
+        pick(&mut app, "feat/new");
         assert_eq!(app.title, "repo:feat/new");
-        assert_eq!(app.branch_status(), Some(BranchStatus::New));
+        assert_eq!(branch_status(&app), BranchStatus::New);
+        app.field = Field::Branch;
         press(&mut app, KeyCode::Left);
         assert_eq!(app.mode, LaunchMode::InPlace);
         assert_eq!(app.branch, "main");
@@ -678,7 +852,7 @@ mod tests {
         let Outcome::Submit(request) = press(&mut app, KeyCode::Enter) else {
             panic!("expected submit");
         };
-        assert_eq!(request.launch, Launch::InPlace);
+        assert_eq!(request.launch, Launch::InPlace { switch: None });
         assert_eq!(request.harness.name, "Claude");
         assert_eq!(request.title, "repo");
     }
@@ -688,7 +862,7 @@ mod tests {
         pick(&mut app, "repo");
         app.field = Field::Branch;
         press(&mut app, KeyCode::Right);
-        type_text(&mut app, branch);
+        pick(&mut app, branch);
         match ctrl(&mut app, 's') {
             Outcome::Submit(request) => request.launch,
             other => panic!("expected submit, got {other:?} ({:?})", app.error),
@@ -721,6 +895,102 @@ mod tests {
                 branch: "feat/wt".into()
             }
         );
+    }
+
+    /// Submit In Place after picking `branch` (`None` leaves it as prefilled).
+    fn submit_in_place_on(dir: &str, branch: Option<&str>) -> (App<FakeProbe>, Outcome) {
+        let mut app = app();
+        pick(&mut app, dir);
+        if let Some(branch) = branch {
+            app.field = Field::Branch;
+            pick(&mut app, branch);
+        }
+        let outcome = ctrl(&mut app, 's');
+        (app, outcome)
+    }
+
+    fn in_place_switch(branch: Option<&str>) -> Option<BranchSwitch> {
+        match submit_in_place_on("repo", branch) {
+            (
+                _,
+                Outcome::Submit(Request {
+                    launch: Launch::InPlace { switch },
+                    ..
+                }),
+            ) => switch,
+            (app, other) => panic!("expected in-place submit, got {other:?} ({:?})", app.error),
+        }
+    }
+
+    #[test]
+    fn in_place_unchanged_branch_does_not_switch() {
+        assert_eq!(in_place_switch(None), None);
+        assert_eq!(in_place_switch(Some("main")), None);
+    }
+
+    #[test]
+    fn in_place_existing_branch_switches() {
+        assert_eq!(
+            in_place_switch(Some("feat/old")),
+            Some(BranchSwitch {
+                repo_root: PathBuf::from("/home/me/src/repo"),
+                branch: "feat/old".into(),
+                create: false,
+                base: None,
+            })
+        );
+    }
+
+    #[test]
+    fn in_place_new_branch_is_created_from_default_branch() {
+        assert_eq!(
+            in_place_switch(Some("feat/new")),
+            Some(BranchSwitch {
+                repo_root: PathBuf::from("/home/me/src/repo"),
+                branch: "feat/new".into(),
+                create: true,
+                base: Some("origin/main".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn in_place_branch_with_worktree_is_refused() {
+        let (app, outcome) = submit_in_place_on("repo", Some("feat/wt"));
+        assert_eq!(outcome, Outcome::Continue);
+        assert_eq!(app.field, Field::Branch);
+        assert_eq!(
+            app.error.as_deref(),
+            Some("'feat/wt' is checked out at /wt/feat-wt, use Worktree mode")
+        );
+    }
+
+    #[test]
+    fn failed_branch_switch_keeps_form_open_on_branch() {
+        let (mut app, outcome) = submit_in_place_on("repo", Some("feat/old"));
+        assert!(matches!(outcome, Outcome::Submit(_)));
+        app.field = Field::Title;
+        app.branch_switch_failed("error: your local changes would be overwritten".into());
+        assert_eq!(app.field, Field::Branch);
+        assert!(app.picker.is_none());
+        assert_eq!(
+            app.error.as_deref(),
+            Some("error: your local changes would be overwritten")
+        );
+        assert_eq!(
+            app.branch, "feat/old",
+            "the choice is kept to retry or change"
+        );
+    }
+
+    #[test]
+    fn detached_head_left_alone_does_not_switch() {
+        let (_, outcome) = submit_in_place_on("detached", None);
+        let Outcome::Submit(request) = outcome else {
+            panic!("expected submit");
+        };
+        assert_eq!(request.launch, Launch::InPlace { switch: None });
+        assert_eq!(request.title, "detached");
     }
 
     #[test]

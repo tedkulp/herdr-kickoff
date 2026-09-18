@@ -14,7 +14,7 @@ use anyhow::{Context, Result, bail};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
-use crate::app::{App, HarnessChoice, Outcome, Probe};
+use crate::app::{App, HarnessChoice, Launch, Outcome, Probe};
 use crate::config::Config;
 use crate::git::RepoInfo;
 use crate::herdr::Herdr;
@@ -162,6 +162,19 @@ fn event_loop(
             Outcome::Cancel => return Ok(()),
             Outcome::Submit(request) => {
                 terminal.draw(|frame| ui::draw(frame, app, true))?;
+                if let Launch::InPlace {
+                    switch: Some(switch),
+                } = &request.launch
+                    && let Err(err) = git::switch(
+                        &switch.repo_root,
+                        &switch.branch,
+                        switch.create,
+                        switch.base.as_deref(),
+                    )
+                {
+                    app.branch_switch_failed(format!("{err:#}"));
+                    continue;
+                }
                 match herdr.launch(&request) {
                     Ok(()) => {
                         if let Some(path) = last_harness_path {

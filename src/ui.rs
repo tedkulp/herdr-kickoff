@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Wrap};
 
-use crate::app::{App, Field, LaunchMode, Picker, Probe};
+use crate::app::{App, Field, LaunchMode, Picker, PickerKind, Probe};
 use crate::git::BranchStatus;
 
 const ACCENT: Color = Color::Cyan;
@@ -42,6 +42,9 @@ pub fn draw<P: Probe>(frame: &mut Frame, app: &App<P>, busy: bool) {
 
 fn help_line<P: Probe>(app: &App<P>) -> Line<'static> {
     let text = match (&app.picker, app.field) {
+        (Some(picker), _) if picker.kind == PickerKind::Branch => {
+            "type to filter or name a new branch · ↑↓ select · enter pick · esc back"
+        }
         (Some(_), _) => "type to filter · ↑↓ select · enter pick · esc back",
         (None, Field::Directory) => {
             "enter/type: choose directory · tab next · ^S launch · esc cancel"
@@ -51,9 +54,11 @@ fn help_line<P: Probe>(app: &App<P>) -> Line<'static> {
             "not a git repo · tab next · ^S launch · esc cancel"
         }
         (None, Field::Branch) => match app.mode {
-            LaunchMode::InPlace => "←→/w: switch to worktree · tab next · ^S launch · esc cancel",
+            LaunchMode::InPlace => {
+                "enter/type: choose branch · ←→/w: worktree · tab next · ^S launch · esc cancel"
+            }
             LaunchMode::Worktree => {
-                "type branch · ←→ switch mode · tab next · ^S launch · esc cancel"
+                "enter/type: choose branch · ←→ switch mode · tab next · ^S launch · esc cancel"
             }
         },
         (None, Field::Title) => "type title · enter/^S launch · esc cancel",
@@ -63,20 +68,31 @@ fn help_line<P: Probe>(app: &App<P>) -> Line<'static> {
 
 fn draw_picker<P: Probe>(frame: &mut Frame, area: Rect, app: &App<P>, picker: &Picker) {
     let [query, list] = Layout::vertical([Constraint::Length(2), Constraint::Min(1)]).areas(area);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            "Directory ".fg(ACCENT).bold(),
-            "› ".fg(ACCENT),
-            Span::raw(picker.query.as_str()),
-            "▏".fg(ACCENT),
-            format!("  {}", picker.entries.len()).dim(),
-        ])),
-        query,
-    );
+    let (label, empty_hint) = match picker.kind {
+        PickerKind::Directory => ("Directory ", "no matches (type /path or ~/path)"),
+        PickerKind::Branch => ("Branch ", "no matches (type a new branch name)"),
+    };
+    let mut header = vec![
+        label.fg(ACCENT).bold(),
+        "› ".fg(ACCENT),
+        Span::raw(picker.query.as_str()),
+        "▏".fg(ACCENT),
+        format!("  {}", picker.entries.len()).dim(),
+    ];
+    let typed = picker.query.trim();
+    if picker.kind == PickerKind::Branch && !typed.is_empty() {
+        header.push(branch_hint(app, typed));
+    }
+    frame.render_widget(Paragraph::new(Line::from(header)), query);
     let items: Vec<ListItem> = picker
         .entries
         .iter()
-        .map(|e| ListItem::new(app.display_path(e)))
+        .map(|e| match picker.kind {
+            PickerKind::Directory => ListItem::new(app.display_path(e)),
+            PickerKind::Branch => {
+                ListItem::new(Line::from(vec![Span::raw(e.clone()), branch_tag(app, e)]))
+            }
+        })
         .collect();
     let empty = items.is_empty();
     let list_widget = List::new(items)
@@ -85,10 +101,7 @@ fn draw_picker<P: Probe>(frame: &mut Frame, area: Rect, app: &App<P>, picker: &P
     let mut state = ListState::default().with_selected((!empty).then_some(picker.selected));
     frame.render_stateful_widget(list_widget, list, &mut state);
     if empty {
-        frame.render_widget(
-            Paragraph::new("no matches (type /path or ~/path)").dim(),
-            list,
-        );
+        frame.render_widget(Paragraph::new(empty_hint).dim(), list);
     }
 }
 
@@ -182,9 +195,9 @@ fn harness_line<P: Probe>(app: &App<P>) -> Line<'static> {
 }
 
 fn branch_line<P: Probe>(app: &App<P>) -> Line<'static> {
-    let Some(repo) = &app.repo else {
+    if app.repo.is_none() {
         return Line::from("not a git repo; opens in place".dim());
-    };
+    }
     let toggle = |mode: LaunchMode, text: &'static str| {
         if app.mode == mode {
             Span::styled(format!("[{text}]"), Style::new().fg(ACCENT).bold())
@@ -197,30 +210,54 @@ fn branch_line<P: Probe>(app: &App<P>) -> Line<'static> {
         toggle(LaunchMode::Worktree, "Worktree"),
         Span::raw("  "),
     ];
-    match app.mode {
-        LaunchMode::InPlace => {
-            spans.push(Span::raw(app.branch.clone()));
-            spans.push(" (current)".dim());
-        }
-        LaunchMode::Worktree => {
-            spans.push(Span::raw(app.branch.clone()));
-            if app.field == Field::Branch {
-                spans.push("▏".fg(ACCENT));
-            }
-            let hint = match app.branch_status() {
-                Some(BranchStatus::New) => match &repo.base {
-                    Some(base) => format!("  new branch from {base}").green(),
-                    None => "  new branch from HEAD".green(),
-                },
-                Some(BranchStatus::Existing) => "  existing branch".yellow(),
-                Some(BranchStatus::CheckedOut(path)) => {
-                    format!("  reopen worktree {}", path.display()).yellow()
-                }
-                Some(BranchStatus::Invalid) => "  invalid branch name".red(),
-                Some(BranchStatus::Empty) | None => "  type a branch name".dim(),
-            };
-            spans.push(hint);
-        }
+    spans.push(Span::raw(app.branch.clone()));
+    if app.mode == LaunchMode::InPlace && !app.switches_branch() {
+        // Left as prefilled, including a detached HEAD: nothing to switch.
+        spans.push(" (current)".dim());
+    } else {
+        spans.push(branch_hint(app, &app.branch));
     }
     Line::from(spans)
+}
+
+/// What launching on `branch` would do in the current Launch Mode.
+fn branch_hint<P: Probe>(app: &App<P>, branch: &str) -> Span<'static> {
+    let Some(repo) = &app.repo else {
+        return Span::default();
+    };
+    let current = repo.is_current(branch);
+    let new_from = || match &repo.base {
+        Some(base) => format!("  new branch from {base}").green(),
+        None => "  new branch from HEAD".green(),
+    };
+    match (app.mode, repo.branch_status(branch)) {
+        (_, BranchStatus::Invalid) => "  invalid branch name".red(),
+        (LaunchMode::InPlace, _) if current => "  current".dim(),
+        (LaunchMode::InPlace, BranchStatus::New) => new_from(),
+        (LaunchMode::InPlace, BranchStatus::Existing) => "  switch to existing branch".yellow(),
+        (LaunchMode::InPlace, BranchStatus::CheckedOut(path)) => {
+            format!("  checked out at {}, use Worktree mode", path.display()).red()
+        }
+        (LaunchMode::Worktree, BranchStatus::New) => new_from(),
+        (LaunchMode::Worktree, BranchStatus::Existing) => "  existing branch".yellow(),
+        (LaunchMode::Worktree, BranchStatus::CheckedOut(path)) => {
+            format!("  reopen worktree {}", path.display()).yellow()
+        }
+        (_, BranchStatus::Empty) => "  choose a branch".dim(),
+    }
+}
+
+/// The tag after a branch in the picker list.
+fn branch_tag<P: Probe>(app: &App<P>, branch: &str) -> Span<'static> {
+    let Some(repo) = &app.repo else {
+        return Span::default();
+    };
+    if repo.is_current(branch) {
+        return "  (current)".dim();
+    }
+    match repo.branch_status(branch) {
+        BranchStatus::CheckedOut(_) => "  ⎇ worktree".yellow(),
+        BranchStatus::New => "  + new".green(),
+        _ => Span::default(),
+    }
 }

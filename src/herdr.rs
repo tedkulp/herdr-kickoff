@@ -39,7 +39,8 @@ impl Herdr {
     pub fn launch(&self, request: &Request) -> Result<()> {
         let title = request.title.as_str();
         let response = match &request.launch {
-            Launch::InPlace => self.call(&[
+            // Any branch switch has already been done by the caller.
+            Launch::InPlace { .. } => self.call(&[
                 "workspace",
                 "create",
                 "--cwd",
