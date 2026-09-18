@@ -1,0 +1,19 @@
+name: release-please
+
+# On every push to main, keep a release PR up to date: it bumps the version in
+# Cargo.toml, Cargo.lock and herdr-plugin.toml and adds the conventional
+# commits since the last release to CHANGELOG.md. Merging that PR tags the
+# release and publishes it on GitHub.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4

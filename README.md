@@ -52,3 +52,13 @@ default_harness = "Claude"      # used when there's no remembered harness
 name = "Claude"
 command = "claude --continue"
 ```
+
+## Releasing
+
+Releases are automated with [release-please](https://github.com/googleapis/release-please):
+
+1. Write commit messages (or squash-merge PR titles) as [conventional commits](https://www.conventionalcommits.org/). Use `feat:` for new behaviour and `fix:` for bug fixes; these appear in the changelog. `docs:`, `chore:`, `ci:`, `refactor:` and `test:` are allowed but left out of it. `feat!:` marks a breaking change.
+2. On each push to `main`, release-please opens or updates a release PR. That PR bumps the version in `Cargo.toml`, `Cargo.lock` and `herdr-plugin.toml` and adds the new commits to `CHANGELOG.md`.
+3. Merging the release PR tags `vX.Y.Z` and publishes the GitHub release.
+
+The repo setting *Settings → Actions → General → Allow GitHub Actions to create and approve pull requests* must be on, or release-please can't open its PR.
