@@ -12,11 +12,11 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - run: just verify
       # Same build herdr runs on `plugin install`.
       - run: just release
