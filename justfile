@@ -46,6 +46,20 @@ link: release
 open:
     herdr plugin action invoke workspace-launcher.open
 
+# Open the launcher popup with zoxide removed from PATH.
+open-no-zoxide:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Drops every PATH directory holding zoxide, so its neighbours vanish too.
+    path=""
+    IFS=: read -ra dirs <<< "$PATH"
+    for dir in "${dirs[@]}"; do
+        [[ -x "$dir/zoxide" ]] && { echo "dropping $dir" >&2; continue; }
+        path="${path:+$path:}$dir"
+    done
+    herdr plugin pane open --plugin workspace-launcher --entrypoint launcher \
+        --env "PATH=$path" --focus >/dev/null
+
 # List this plugin's command logs.
 logs:
     herdr plugin log list --plugin workspace-launcher
