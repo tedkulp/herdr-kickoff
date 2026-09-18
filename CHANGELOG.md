@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/tedkulp/herdr-kickoff/compare/v0.2.0...v0.3.0) (2026-09-18)
+
+
+### Features
+
+* branch picker for both Launch Modes; In Place can switch branch ([3088bff](https://github.com/tedkulp/herdr-kickoff/commit/3088bff2b06ade1cf2ace8ee8ad18b1a5308f74e)), closes [#2](https://github.com/tedkulp/herdr-kickoff/issues/2)
+
 ## [0.2.0](https://github.com/tedkulp/herdr-kickoff/compare/v0.1.0...v0.2.0) (2026-09-18)
 
 
