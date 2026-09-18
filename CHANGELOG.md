@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-18
+
 ### Added
 
 - Branch picker for both Launch Modes: local branches, the current one first and the rest by most recent commit, filtered like the directory picker. Branches checked out in a worktree are tagged `⎇ worktree`, and typing a name that doesn't exist creates that branch.
@@ -36,6 +38,7 @@ First release.
 - Title that follows the directory name (`name:branch` for worktrees) until edited
 - Clear messages when zoxide is missing or fails, and herdr errors shown inline without closing the popup
 
-[Unreleased]: https://github.com/tedkulp/herdr-kickoff/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/tedkulp/herdr-kickoff/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/tedkulp/herdr-kickoff/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tedkulp/herdr-kickoff/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tedkulp/herdr-kickoff/releases/tag/v0.1.0
