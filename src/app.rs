@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::config::Harness;
-use crate::fuzzy;
+use crate::filter;
 use crate::git::{BranchStatus, RepoInfo};
 
 /// The filesystem and git lookups the form needs while you type.
@@ -314,7 +314,7 @@ impl<P: Probe> App<P> {
         {
             entries.push(path.to_string_lossy().into_owned());
         }
-        for i in fuzzy::filter(&picker.query, &self.zoxide) {
+        for i in filter::filter(&picker.query, &self.zoxide) {
             if !entries.contains(&self.zoxide[i]) {
                 entries.push(self.zoxide[i].clone());
             }

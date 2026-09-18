@@ -1,6 +1,6 @@
 mod app;
 mod config;
-mod fuzzy;
+mod filter;
 mod git;
 mod harness;
 mod herdr;

@@ -2,7 +2,7 @@
 
 A herdr plugin that opens a popup form for starting a new workspace:
 
-1. **Directory**: fuzzy-pick from `zoxide query --list`, or type a `/path` or `~/path`
+1. **Directory**: pick from `zoxide query --list`, filtered like `zoxide query -i` (every word must appear in the path, zoxide ranking kept), or type a `/path` or `~/path`
 2. **Harness**: Opencode, Codex, Claude, pi, omp or Shell. Harnesses that aren't on PATH are greyed out, and PATH is re-checked live.
 3. **Branch**: *In place* shows the current branch. *Worktree* creates a worktree for the branch you type:
    - a new branch starts from the default branch
