@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/tedkulp/herdr-kickoff/compare/v0.1.0...v0.2.0) (2026-09-18)
+
+
+### Features
+
+* install prebuilt binaries instead of requiring cargo ([e7a26ae](https://github.com/tedkulp/herdr-kickoff/commit/e7a26aef26740985f5787bac981f08cbd94cf2ea))
+
 ## 0.1.0 (2026-09-18)
 
 First release.
