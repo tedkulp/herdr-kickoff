@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-02
+
 ### Fixed
 
 - Harnesses installed through your shell setup (mise, `~/.local/bin`, and so on) are no longer greyed out when herdr itself was started with a bare system PATH, for example from a remote client. Availability is now checked against the PATH your interactive `$SHELL` sets up, which is where the harness actually runs.
@@ -42,7 +44,8 @@ First release.
 - Title that follows the directory name (`name:branch` for worktrees) until edited
 - Clear messages when zoxide is missing or fails, and herdr errors shown inline without closing the popup
 
-[Unreleased]: https://github.com/tedkulp/herdr-kickoff/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/tedkulp/herdr-kickoff/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/tedkulp/herdr-kickoff/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/tedkulp/herdr-kickoff/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tedkulp/herdr-kickoff/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tedkulp/herdr-kickoff/releases/tag/v0.1.0
