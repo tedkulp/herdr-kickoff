@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Harnesses installed through your shell setup (mise, `~/.local/bin`, and so on) are no longer greyed out when herdr itself was started with a bare system PATH, for example from a remote client. Availability is now checked against the PATH your interactive `$SHELL` sets up, which is where the harness actually runs.
+
 ## [0.3.0] - 2026-09-18
 
 ### Added

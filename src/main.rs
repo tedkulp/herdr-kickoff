@@ -4,8 +4,10 @@ mod filter;
 mod git;
 mod harness;
 mod herdr;
+mod shell_path;
 mod ui;
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
@@ -22,6 +24,7 @@ use crate::herdr::Herdr;
 const PLUGIN_ID: &str = "kickoff";
 const LAST_HARNESS_FILE: &str = "last_harness";
 const AVAILABILITY_REFRESH: Duration = Duration::from_secs(2);
+const SHELL_PATH_TIMEOUT: Duration = Duration::from_secs(3);
 
 fn main() -> ExitCode {
     let result = match std::env::args().nth(1).as_deref() {
@@ -66,8 +69,13 @@ fn env_dir(name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn is_available(harness: &config::Harness) -> bool {
-    harness::is_available(harness, std::env::var_os("PATH").as_deref())
+/// The PATH harnesses are checked against: the user's interactive shell's,
+/// falling back to this process's own.
+fn harness_path() -> Option<OsString> {
+    std::env::var_os("SHELL")
+        .filter(|shell| !shell.is_empty())
+        .and_then(|shell| shell_path::login_shell_path(&shell, SHELL_PATH_TIMEOUT))
+        .or_else(|| std::env::var_os("PATH"))
 }
 
 /// Runs `command query --list`; `command` is `zoxide` outside tests.
@@ -112,6 +120,8 @@ fn run_launcher() -> Result<()> {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|s| s.trim().to_string());
 
+    let path = harness_path();
+    let is_available = |harness: &config::Harness| harness::is_available(harness, path.as_deref());
     let harnesses = config
         .harnesses
         .into_iter()
@@ -130,7 +140,12 @@ fn run_launcher() -> Result<()> {
     }
 
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, &mut app, last_harness_path.as_deref());
+    let result = event_loop(
+        &mut terminal,
+        &mut app,
+        last_harness_path.as_deref(),
+        is_available,
+    );
     ratatui::restore();
     result
 }
@@ -139,12 +154,13 @@ fn event_loop(
     terminal: &mut DefaultTerminal,
     app: &mut App<SystemProbe>,
     last_harness_path: Option<&Path>,
+    is_available: impl Fn(&config::Harness) -> bool,
 ) -> Result<()> {
     let herdr = Herdr::from_env();
     let mut last_refresh = Instant::now();
     loop {
         if last_refresh.elapsed() >= AVAILABILITY_REFRESH {
-            app.refresh_availability(is_available);
+            app.refresh_availability(&is_available);
             last_refresh = Instant::now();
         }
         terminal.draw(|frame| ui::draw(frame, app, false))?;
